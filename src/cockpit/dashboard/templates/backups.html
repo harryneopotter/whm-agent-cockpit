@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block title %} — Backups{% endblock %}
+{% block content %}
+<div class="header">
+  <h2>Backup Health</h2>
+  <p>JetBackup status and restore readiness</p>
+</div>
+
+<div class="grid">
+  <div class="card">
+    <h3>Destination</h3>
+    <div class="value {{ 'up' if backups.destination_reachable else 'down' }}">
+      {{ 'Reachable' if backups.destination_reachable else 'Unreachable' }}
+    </div>
+  </div>
+  <div class="card">
+    <h3>Last Run</h3>
+    <div class="value">{{ backups.last_run_at or 'never' }}</div>
+  </div>
+  <div class="card">
+    <h3>Failed Accounts</h3>
+    <div class="value {{ 'warn' if backups.failed_accounts|length > 0 else 'up' }}">{{ backups.failed_accounts|length }}</div>
+  </div>
+  <div class="card">
+    <h3>Missing Backups</h3>
+    <div class="value {{ 'warn' if backups.accounts_missing_recent_backup|length > 0 else 'up' }}">
+      {{ backups.accounts_missing_recent_backup|length }}
+    </div>
+  </div>
+</div>
+
+{% if backups.failed_accounts %}
+<div class="header"><h2>Failed Accounts</h2></div>
+<table>
+  <thead><tr><th>Account</th></tr></thead>
+  <tbody>
+  {% for acct in backups.failed_accounts %}
+  <tr><td>{{ acct }}</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+
+{% if backups.accounts_missing_recent_backup %}
+<div class="header"><h2>Accounts Without Recent Backup</h2></div>
+<table>
+  <thead><tr><th>Account</th></tr></thead>
+  <tbody>
+  {% for acct in backups.accounts_missing_recent_backup %}
+  <tr><td><a href="/accounts/{{ acct }}">{{ acct }}</a></td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+
+<div class="whm-links">
+  <a href="https://{{ whm_host }}:2087/cpsess#/scripts2/jetbackup" target="_blank">JetBackup in WHM</a>
+</div>
+{% endblock %}

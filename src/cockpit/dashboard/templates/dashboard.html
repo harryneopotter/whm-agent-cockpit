@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% block title %} — Dashboard{% endblock %}
+{% block content %}
+<div class="header">
+  <h2>Global Dashboard</h2>
+  <p>Server: {{ server.hostname or 'unknown' }} · {{ server.load_avg_1m or '?' }} / {{ server.load_avg_5m or '?' }} / {{ server.load_avg_15m or '?' }} load</p>
+</div>
+
+<div class="grid">
+  <div class="card">
+    <h3>Services</h3>
+    {% for svc in services %}
+    <div style="display:flex;justify-content:space-between;padding:0.25rem 0;">
+      <span>{{ svc.name }}</span>
+      <span class="badge {{ 'ok' if svc.status == 'running' else 'critical' }}">{{ svc.status }}</span>
+    </div>
+    {% else %}
+    <div class="detail">No service data collected yet</div>
+    {% endfor %}
+  </div>
+
+  <div class="card">
+    <h3>Disk</h3>
+    <div class="value {{ 'warn' if disk.used_percent and disk.used_percent > 80 else 'up' }}">{{ disk.used_percent or '?' }}%</div>
+    <div class="meta">{{ disk.free_gb or '?' }} GB free</div>
+    <div class="detail">Inodes: {{ disk.inode_used_percent or '?' }}%</div>
+  </div>
+
+  <div class="card">
+    <h3>Memory</h3>
+    <div class="value {{ 'warn' if server.ram_used_percent and server.ram_used_percent > 80 else 'up' }}">{{ server.ram_used_percent or '?' }}%</div>
+    <div class="detail">Swap: {{ server.swap_used_percent or '?' }}%</div>
+  </div>
+
+  <div class="card">
+    <h3>Mail Queue</h3>
+    <div class="value {{ 'warn' if mail.queue_size and mail.queue_size > 500 else 'up' }}">{{ mail.queue_size or '?' }}</div>
+    <div class="meta">{{ mail.frozen_count or 0 }} frozen · {{ mail.exim_errors_last_hour or 0 }} errors/h</div>
+  </div>
+
+  <div class="card">
+    <h3>Backups</h3>
+    <div class="value {{ 'down' if not backups.destination_reachable else 'up' }}">{{ 'Reachable' if backups.destination_reachable else 'Unreachable' }}</div>
+    <div class="meta">Last run: {{ backups.last_run_at or 'never' }}</div>
+    <div class="detail">{{ backups.failed_accounts|length }} failed · {{ backups.accounts_missing_recent_backup|length }} missing</div>
+  </div>
+
+  <div class="card">
+    <h3>SSL</h3>
+    <div class="value {{ 'warn' if ssl.expiring_within_14_days|length > 0 else 'up' }}">{{ ssl.expiring_within_14_days|length }} expiring</div>
+    <div class="detail">Within 14 days</div>
+  </div>
+</div>
+
+<div class="header"><h2>Active Alerts</h2></div>
+{% if alerts %}
+<table>
+  <thead><tr><th>Issue</th><th>Severity</th><th>State</th><th>Detected</th><th>Count</th></tr></thead>
+  <tbody>
+  {% for alert in alerts %}
+  <tr>
+    <td><a href="/audit#{{ alert.issue_id }}">{{ alert.description or alert.issue_id }}</a></td>
+    <td><span class="badge {{ alert.severity }}">{{ alert.severity }}</span></td>
+    <td><span class="badge info">{{ alert.state }}</span></td>
+    <td>{{ alert.detected_at }}</td>
+    <td>{{ alert.consecutive_detections }}</td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<div class="card"><div class="detail">No active alerts</div></div>
+{% endif %}
+{% endblock %}

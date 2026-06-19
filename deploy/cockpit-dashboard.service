@@ -1,0 +1,24 @@
+[Unit]
+Description=Cockpit Dashboard (Operator UI)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=cockpit
+Group=cockpit
+EnvironmentFile=/etc/cockpit/cockpit.env
+ExecStart=/usr/local/bin/cockpit-dashboard
+Restart=always
+RestartSec=5
+CPUQuota=30%
+MemoryMax=512M
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=full
+CapabilityBoundingSet=
+AmbientCapabilities=
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,60 @@
+# Cockpit Policy Engine — example config
+# Copy to /etc/cockpit/policy.toml and edit.
+# Version-controlled in git. NOT writable by automation.
+# See PRD §8.5, addendum §9-10 for field definitions.
+
+[actions.RESTART_EXIM]
+auto_run = true
+require_consecutive_detections = 2
+cooldown_seconds = 300
+max_per_24h = 5
+notify_before = false
+notify_after = true
+enabled = true
+block_after_postcheck_failures = 1
+require_manual_ack_after_failure = true
+
+[actions.RESTART_DOVECOT]
+auto_run = true
+require_consecutive_detections = 2
+cooldown_seconds = 300
+max_per_24h = 5
+notify_before = false
+notify_after = true
+enabled = true
+
+[actions.RESTART_LITESPEED]
+auto_run = true
+require_consecutive_detections = 2
+cooldown_seconds = 300
+max_per_24h = 5
+notify_before = false
+notify_after = true
+enabled = true
+
+[actions.RUN_AUTOSSL_FOR_DOMAIN]
+auto_run = true
+require_consecutive_detections = 1
+cooldown_seconds = 3600
+max_per_24h = 10
+notify_before = false
+notify_after = true
+enabled = true
+
+[actions.RESTART_MARIADB]
+auto_run = false
+require_consecutive_detections = 1
+cooldown_seconds = 600
+max_per_24h = 2
+notify_before = true
+notify_after = true
+enabled = false
+
+[actions.CHECK_SERVICE_STATUS]
+auto_run = true
+require_consecutive_detections = 1
+cooldown_seconds = 60
+max_per_24h = 100
+notify_before = false
+notify_after = true
+enabled = true

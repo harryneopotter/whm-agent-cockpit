@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %} — SSL Status{% endblock %}
+{% block content %}
+<div class="header">
+  <h2>SSL Certificate Status</h2>
+  <p>Certificates expiring within 14 days are highlighted</p>
+</div>
+
+<table>
+  <thead><tr><th>Domain</th><th>Days Remaining</th><th>Issuer</th></tr></thead>
+  <tbody>
+  {% for cert in certs %}
+  <tr>
+    <td>{{ cert.domain }}</td>
+    <td>
+      {% if cert.days_remaining is not none and cert.days_remaining <= 14 %}
+        <span class="badge {{ 'critical' if cert.days_remaining <= 3 else 'warning' }}">{{ cert.days_remaining }} days</span>
+      {% elif cert.days_remaining is none %}
+        <span class="badge info">Unknown</span>
+      {% else %}
+        {{ cert.days_remaining }} days
+      {% endif %}
+    </td>
+    <td>{{ cert.issuer or '—' }}</td>
+  </tr>
+  {% else %}
+  <tr><td colspan="3">No SSL certificate data collected yet</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

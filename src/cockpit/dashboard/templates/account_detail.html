@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% block title %} — {{ acct.username }}{% endblock %}
+{% block content %}
+<div class="header">
+  <h2>{{ acct.username }}</h2>
+  <p><a href="https://{{ acct.domain }}" target="_blank">{{ acct.domain }}</a></p>
+</div>
+
+<div class="grid">
+  <div class="card">
+    <h3>Account</h3>
+    <div class="detail">Plan: {{ acct.plan_name or '—' }}</div>
+    <div class="detail">PHP: {{ acct.php_version or '—' }}</div>
+    <div class="detail">Primary IP: {{ acct.primary_ip or '—' }}</div>
+  </div>
+
+  <div class="card">
+    <h3>Disk Usage</h3>
+    <div class="value {{ 'warn' if disk_percent and disk_percent > 80 else 'up' }}">{{ disk_percent or '?' }}%</div>
+    <div class="meta">{{ acct.disk_used_mb or '?' }} MB / {{ acct.disk_limit_mb or '?' }} MB</div>
+  </div>
+
+  <div class="card">
+    <h3>Bandwidth</h3>
+    <div class="value {{ 'warn' if bw_percent and bw_percent > 80 else 'up' }}">{{ bw_percent or '?' }}%</div>
+    <div class="meta">{{ acct.bandwidth_used_mb or '?' }} MB / {{ acct.bandwidth_limit_mb or '?' }} MB</div>
+  </div>
+
+  <div class="card">
+    <h3>Resources</h3>
+    <div class="detail">Email: {{ acct.email_count or 0 }}</div>
+    <div class="detail">Databases: {{ acct.db_count or 0 }}</div>
+    <div class="detail">Subdomains: {{ acct.subdomain_count or 0 }}</div>
+    <div class="detail">Addon domains: {{ acct.addon_domain_count or 0 }}</div>
+    <div class="detail">Parked domains: {{ acct.parked_domain_count or 0 }}</div>
+  </div>
+
+  <div class="card">
+    <h3>Website Status</h3>
+    {% if health %}
+    <div class="value {{ 'up' if health.online_status == 'UP' else 'down' }}">{{ health.online_status }}</div>
+    <div class="meta">{{ health.response_time_ms }}ms · HTTP {{ health.http_status_code }}</div>
+    <div class="detail">SSL: {{ '✅ Valid' if health.ssl_valid else '❌' }} · {{ health.ssl_days_remaining or '?' }} days</div>
+    <div class="freshness {{ health.freshness or 'unknown' }}">Last checked: {{ health.collected_at }}</div>
+    {% else %}
+    <div class="value down">UNKNOWN</div>
+    <div class="detail">No health check data yet</div>
+    {% endif %}
+  </div>
+
+  <div class="card">
+    <h3>Account Status</h3>
+    {% if suspension %}
+    <div class="value {{ 'up' if not suspension.suspended else 'down' }}">
+      {{ 'Active' if not suspension.suspended else 'Suspended' }}
+    </div>
+    {% else %}
+    <div class="value down">UNKNOWN</div>
+    {% endif %}
+  </div>
+</div>
+
+<div class="whm-links">
+  <h3 style="margin-bottom:0.5rem;color:#64748b;font-size:0.8rem;text-transform:uppercase;">WHM Shortcuts</h3>
+  <a href="https://{{ whm_host }}:2087/cpsess#/scripts2/accountsummary?user={{ acct.username }}" target="_blank">Open in WHM</a>
+  <a href="https://{{ acct.domain }}:2083" target="_blank">Login to cPanel</a>
+</div>
+{% endblock %}

@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block title %} — Accounts{% endblock %}
+{% block content %}
+<div class="header">
+  <h2>Accounts</h2>
+  <p>{{ accounts|length }} total accounts</p>
+</div>
+
+<div class="search">
+  <input type="text" id="accountSearch" placeholder="Search by username or domain…" onkeyup="filterAccounts()">
+</div>
+
+<script>
+function filterAccounts() {
+  const q = document.getElementById('accountSearch').value.toLowerCase();
+  document.querySelectorAll('#accountsTable tbody tr').forEach(row => {
+    row.style.display = row.textContent.toLowerCase().includes(q) ? '' : 'none';
+  });
+}
+</script>
+
+<table id="accountsTable">
+  <thead>
+    <tr><th>Username</th><th>Domain</th><th>Plan</th><th>Disk</th><th>Status</th><th>PHP</th></tr>
+  </thead>
+  <tbody>
+  {% for acct in accounts %}
+  <tr>
+    <td><a href="/accounts/{{ acct.username }}">{{ acct.username }}</a></td>
+    <td>{{ acct.domain }}</td>
+    <td>{{ acct.plan_name or '—' }}</td>
+    <td>
+      {% if acct.disk_used_mb is not none and acct.disk_limit_mb and acct.disk_limit_mb > 0 %}
+        {{ (acct.disk_used_mb / acct.disk_limit_mb * 100)|round(1) }}%
+      {% else %}—{% endif %}
+    </td>
+    <td>
+      {% if acct.suspended %}
+        <span class="badge critical">Suspended</span>
+      {% else %}
+        <span class="badge ok">Active</span>
+      {% endif %}
+    </td>
+    <td>{{ acct.php_version or '—' }}</td>
+  </tr>
+  {% else %}
+  <tr><td colspan="6">No accounts loaded yet — run the WHM account collector</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

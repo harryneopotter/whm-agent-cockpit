@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Cockpit{% block title %}{% endblock %}</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background: #0f172a; color: #e2e8f0; font-size: 14px; line-height: 1.5;
+    }
+    .layout { display: flex; min-height: 100vh; }
+    .nav {
+      width: 220px; background: #1e293b; padding: 1.5rem 0;
+      border-right: 1px solid #334155;
+    }
+    .nav h1 { font-size: 1.1rem; padding: 0 1rem 1.5rem; color: #38bdf8; font-weight: 600; }
+    .nav a {
+      display: block; padding: 0.5rem 1rem; color: #94a3b8; text-decoration: none;
+      font-size: 0.9rem; border-left: 3px solid transparent;
+    }
+    .nav a:hover, .nav a.active { background: #334155; color: #e2e8f0; border-left-color: #38bdf8; }
+    .main { flex: 1; padding: 1.5rem 2rem; max-width: 1200px; }
+    .header { margin-bottom: 1.5rem; }
+    .header h2 { font-size: 1.3rem; font-weight: 600; color: #f1f5f9; }
+    .header p { color: #64748b; font-size: 0.85rem; margin-top: 0.25rem; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 1rem; margin-bottom: 1.5rem; }
+    .card {
+      background: #1e293b; border: 1px solid #334155; border-radius: 8px; padding: 1rem;
+    }
+    .card h3 { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em; color: #64748b; margin-bottom: 0.5rem; }
+    .card .value { font-size: 1.5rem; font-weight: 700; }
+    .card .value.up { color: #22c55e; }
+    .card .value.down { color: #ef4444; }
+    .card .value.warn { color: #eab308; }
+    .card .value.mid { color: #f97316; }
+    .card .meta { font-size: 0.8rem; color: #64748b; margin-top: 0.25rem; }
+    .card .detail { font-size: 0.85rem; color: #94a3b8; margin-top: 0.25rem; }
+    table { width: 100%; border-collapse: collapse; }
+    th { text-align: left; padding: 0.5rem 0.75rem; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em; color: #64748b; border-bottom: 1px solid #334155; }
+    td { padding: 0.5rem 0.75rem; border-bottom: 1px solid #1e293b; font-size: 0.9rem; }
+    tr:hover td { background: #1e293b; }
+    .badge {
+      display: inline-block; padding: 0.15rem 0.5rem; border-radius: 4px;
+      font-size: 0.75rem; font-weight: 600; text-transform: uppercase;
+    }
+    .badge.critical { background: #450a0a; color: #fca5a5; }
+    .badge.warning { background: #451a03; color: #fdba74; }
+    .badge.ok { background: #052e16; color: #86efac; }
+    .badge.info { background: #0c4a6e; color: #7dd3fc; }
+    a { color: #38bdf8; text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    .search { margin-bottom: 1rem; }
+    .search input {
+      width: 100%; max-width: 400px; padding: 0.5rem 0.75rem;
+      background: #1e293b; border: 1px solid #334155; border-radius: 6px;
+      color: #e2e8f0; font-size: 0.9rem;
+    }
+    .search input:focus { outline: none; border-color: #38bdf8; }
+    .freshness { font-size: 0.75rem; color: #64748b; }
+    .freshness.stale { color: #eab308; }
+    .freshness.unknown { color: #ef4444; }
+    .whm-links { margin-top: 1rem; }
+    .whm-links a { display: inline-block; margin-right: 0.75rem; margin-bottom: 0.5rem; }
+    @media (max-width: 768px) {
+      .nav { width: 60px; overflow: hidden; }
+      .nav h1, .nav a span { display: none; }
+      .nav a { padding: 0.75rem; text-align: center; }
+    }
+  </style>
+</head>
+<body>
+<div class="layout">
+  <nav class="nav">
+    <h1>🛸 Cockpit</h1>
+    <a href="/" class="{% if active == 'dashboard' %}active{% endif %}"><span>Dashboard</span></a>
+    <a href="/accounts" class="{% if active == 'accounts' %}active{% endif %}"><span>Accounts</span></a>
+    <a href="/mail" class="{% if active == 'mail' %}active{% endif %}"><span>Mail Health</span></a>
+    <a href="/backups" class="{% if active == 'backups' %}active{% endif %}"><span>Backups</span></a>
+    <a href="/ssl" class="{% if active == 'ssl' %}active{% endif %}"><span>SSL</span></a>
+    <a href="/offenders" class="{% if active == 'offenders' %}active{% endif %}"><span>Offenders</span></a>
+    <a href="/audit" class="{% if active == 'audit' %}active{% endif %}"><span>Audit Log</span></a>
+  </nav>
+  <main class="main">
+    {% block content %}{% endblock %}
+  </main>
+</div>
+</body>
+</html>

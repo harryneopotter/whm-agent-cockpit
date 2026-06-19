@@ -1,0 +1,43 @@
+[project]
+name = "cockpit"
+version = "0.1.0"
+description = "Internal WHM/cPanel hosting operations cockpit"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
+    "httpx>=0.28",
+    "apscheduler>=3.10",
+    "aiosqlite>=0.20",
+    "pydantic>=2.9",
+    "pydantic-settings>=2.6",
+    "tomli>=2.0",
+    "httpx-auth>=0.21",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8",
+    "pytest-asyncio>=0.24",
+    "ruff>=0.7",
+    "responses>=0.25",
+    "syrupy>=4.7",
+]
+
+[project.scripts]
+cockpit-collector = "cockpit.collectors.runner:main"
+cockpit-dashboard = "cockpit.dashboard.app:main"
+cockpit-executor = "cockpit.executor.runner:main"
+cockpit-db-migrate = "cockpit.db.migrate:main"
+cockpit-client-api = "cockpit.api.client_telemetry:main"
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W", "UP", "B", "SIM"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]

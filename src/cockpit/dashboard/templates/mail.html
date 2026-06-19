@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %} — Mail Health{% endblock %}
+{% block content %}
+<div class="header">
+  <h2>Mail Health</h2>
+  <p>Exim + Dovecot status and queue overview</p>
+</div>
+
+<div class="grid">
+  <div class="card">
+    <h3>Exim</h3>
+    <div class="value {{ 'up' if services.exim == 'running' else 'down' }}">{{ services.exim or 'unknown' }}</div>
+  </div>
+  <div class="card">
+    <h3>Dovecot</h3>
+    <div class="value {{ 'up' if services.dovecot == 'running' else 'down' }}">{{ services.dovecot or 'unknown' }}</div>
+  </div>
+  <div class="card">
+    <h3>Queue Size</h3>
+    <div class="value {{ 'warn' if mail.queue_size and mail.queue_size > 500 else 'up' }}">{{ mail.queue_size or '?' }}</div>
+  </div>
+  <div class="card">
+    <h3>Frozen</h3>
+    <div class="value {{ 'warn' if mail.frozen_count and mail.frozen_count > 10 else 'up' }}">{{ mail.frozen_count or 0 }}</div>
+  </div>
+  <div class="card">
+    <h3>Errors (Last Hour)</h3>
+    <div class="value {{ 'warn' if mail.exim_errors_last_hour and mail.exim_errors_last_hour > 20 else 'up' }}">{{ mail.exim_errors_last_hour or 0 }}</div>
+  </div>
+</div>
+
+<div class="whm-links">
+  <a href="https://{{ whm_host }}:2087/cpsess#/scripts2/mailqueue" target="_blank">WHM Mail Queue Manager</a>
+</div>
+{% endblock %}
