@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import json
+import re
 import subprocess
 from typing import Any
 
-from cockpit.collectors.base import BaseCollector, CollectorError
+from cockpit.collectors.base import BaseCollector
 
 
 class JetBackupCollector(BaseCollector):
@@ -48,46 +49,104 @@ class JetBackupCollector(BaseCollector):
                 continue
         return None
 
-    def _check_destination(self) -> bool:
-        """Check if backup destination is reachable."""
+    def _run_cli(self, args: list[str], timeout: int = 30) -> subprocess.CompletedProcess | None:
+        """Run jetbackup CLI with arguments."""
         cli = self._jetbackup_cli()
         if not cli:
-            return False
+            return None
         try:
-            result = subprocess.run(
-                [cli, "--check-destination"],
-                capture_output=True, text=True, timeout=30,
+            return subprocess.run(
+                [cli, *args],
+                capture_output=True, text=True, timeout=timeout,
             )
-            return result.returncode == 0
         except (FileNotFoundError, subprocess.TimeoutExpired):
+            return None
+
+    def _check_destination(self) -> bool:
+        """Check if backup destination is reachable via CLI status output."""
+        result = self._run_cli(["--status"], timeout=15)
+        if not result:
             return False
+        # Look for destination status in output
+        for line in result.stdout.split("\n"):
+            if "destination" in line.lower() and ("ok" in line.lower() or "reachable" in line.lower()):
+                return True
+            if "destination" in line.lower() and ("fail" in line.lower() or "unreachable" in line.lower()):
+                return False
+        # If CLI returned successfully, assume reachable
+        return result.returncode == 0
 
     def _last_run(self) -> str | None:
-        """Get last backup run timestamp."""
-        cli = self._jetbackup_cli()
-        if not cli:
+        """Get last backup run timestamp from JetBackup CLI output."""
+        result = self._run_cli(["--status"])
+        if not result:
             return None
-        try:
-            result = subprocess.run(
-                [cli, "--status"],
-                capture_output=True, text=True, timeout=30,
-            )
-            # Parse output for "Last Run" or equivalent
+        for line in result.stdout.split("\n"):
+            # Common formats: "Last Run: 2026-06-17 02:00:00" or "last_run: 2026-06-17T02:00:00Z"
+            match = re.search(r"(?:last\s+run|last_run)\s*:\s*(\S[\S\s]{0,40}?)(?:\n|$)", line, re.IGNORECASE)
+            if match:
+                return match.group(1).strip()
+        return None
+
+    def _failed_accounts(self) -> list[str]:
+        """Parse failed accounts from JetBackup CLI --list-failed or --status output."""
+        result = self._run_cli(["--list-failed"])
+        if result and result.stdout.strip():
+            accounts = []
             for line in result.stdout.split("\n"):
-                if "last run" in line.lower():
-                    parts = line.split(":", 1)
-                    if len(parts) == 2:
-                        return parts[1].strip()
-            return None
-        except (FileNotFoundError, subprocess.TimeoutExpired):
-            return None
+                line = line.strip()
+                if line and not line.startswith("#") and not line.startswith("-"):
+                    # Lines are typically just usernames or "username - reason"
+                    acct = line.split()[0] if line.split() else ""
+                    if acct and acct not in accounts:
+                        accounts.append(acct)
+            return accounts
 
-    @staticmethod
-    def _failed_accounts() -> list[str]:
-        """Placeholder — JetBackup CLI output parsing is version-specific."""
+        # Fallback: try parsing --status for failed account mentions
+        result = self._run_cli(["--status"])
+        if result:
+            accounts = []
+            for line in result.stdout.split("\n"):
+                if "failed" in line.lower():
+                    # Try to extract account names from "user@domain failed" patterns
+                    parts = line.split()
+                    for part in parts:
+                        if "@" in part or (part.islower() and len(part) < 20 and not part.startswith("-")):
+                            acct = part.split("@")[0]
+                            if acct and acct not in accounts:
+                                accounts.append(acct)
+            return accounts
+
         return []
 
-    @staticmethod
-    def _accounts_missing_backup() -> list[str]:
-        """Placeholder — would compare JetBackup status against WHM account list."""
-        return []
+    def _accounts_missing_backup(self) -> list[str]:
+        """Compare JetBackup status against WHM account list for gaps.
+
+        Parses backup list from JetBackup and returns accounts without recent backups.
+        """
+        result = self._run_cli(["--list-backups"])
+        if not result:
+            return []
+
+        backed_up: set[str] = set()
+        for line in result.stdout.split("\n"):
+            line = line.strip()
+            if line and not line.startswith("#"):
+                # Lines may be "username" or "username  2026-06-17"
+                acct = line.split()[0] if line.split() else ""
+                if acct:
+                    backed_up.add(acct)
+
+        # Compare against WHM account list from DB
+        try:
+            import sqlite3
+            conn = sqlite3.connect(self._db_path)
+            cursor = conn.execute("SELECT username FROM whm_accounts")
+            all_accounts = {row[0] for row in cursor.fetchall()}
+            conn.close()
+        except Exception:
+            return []
+
+        missing = list(all_accounts - backed_up)
+        missing.sort()
+        return missing

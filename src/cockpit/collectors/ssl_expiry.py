@@ -25,13 +25,13 @@ class SSLExpiryCollector(BaseCollector):
         rows: list[dict[str, Any]] = []
 
         for domain in domains:
-            days_remaining, issuer = self._check_domain_ssl(domain)
+            days_remaining, issuer, valid_from, valid_to = self._check_domain_ssl(domain)
             rows.append({
                 "collected_at": now,
                 "domain": domain,
                 "issuer": issuer,
-                "valid_from": None,
-                "valid_to": None,
+                "valid_from": valid_from,
+                "valid_to": valid_to,
                 "days_remaining": days_remaining,
                 "auto_ssl_enabled": None,
                 "ttl_seconds": 3600,
@@ -47,13 +47,25 @@ class SSLExpiryCollector(BaseCollector):
             rows = conn.execute(
                 "SELECT DISTINCT domain FROM whm_accounts WHERE domain != ''"
             ).fetchall()
-            return [r[0] for r in rows]
+            domains = {r[0] for r in rows}
+            # Also include addon, parked, and subdomains from domain_mapping
+            try:
+                extra = conn.execute(
+                    "SELECT DISTINCT domain FROM domain_mapping WHERE domain != ''"
+                ).fetchall()
+                domains.update(r[0] for r in extra)
+            except Exception:
+                pass  # domain_mapping table may not exist yet
+            return sorted(domains)
         finally:
             conn.close()
 
     @staticmethod
-    def _check_domain_ssl(domain: str) -> tuple[int | None, str | None]:
-        """Connect to domain:443 and check cert expiry. Returns (days_remaining, issuer)."""
+    def _check_domain_ssl(domain: str) -> tuple[int | None, str | None, str | None, str | None]:
+        """Connect to domain:443 and check cert expiry.
+
+        Returns (days_remaining, issuer, valid_from, valid_to).
+        """
         try:
             ctx = ssl.create_default_context()
             ctx.check_hostname = True
@@ -62,21 +74,32 @@ class SSLExpiryCollector(BaseCollector):
                 with ctx.wrap_socket(sock, server_hostname=domain) as ssock:
                     cert = ssock.getpeercert()
                     if not cert:
-                        return (None, None)
+                        return (None, None, None, None)
 
-                    # Parse notAfter
                     not_after = cert.get("notAfter", "")
+                    not_before = cert.get("notBefore", "")
+                    issuer = dict(cert.get("issuer", [])).get("organizationName")
+                    days = None
+                    valid_from = None
+                    valid_to = None
+
                     try:
                         expiry = datetime.strptime(not_after, "%b %d %H:%M:%S %Y %Z")
                         expiry = expiry.replace(tzinfo=timezone.utc)
                         now = datetime.now(timezone.utc)
                         days = (expiry - now).days
+                        valid_to = expiry.isoformat()
                     except (ValueError, TypeError):
-                        days = None
+                        pass
 
-                    # Get issuer
-                    issuer = dict(cert.get("issuer", [])).get("organizationName")
+                    try:
+                        start = datetime.strptime(not_before, "%b %d %H:%M:%S %Y %Z")
+                        start = start.replace(tzinfo=timezone.utc)
+                        valid_from = start.isoformat()
+                    except (ValueError, TypeError):
+                        pass
 
-                    return (days, issuer)
+                    return (days, issuer, valid_from, valid_to)
+
         except (socket.timeout, socket.error, ssl.SSLError, OSError):
-            return (None, None)
+            return (None, None, None, None)

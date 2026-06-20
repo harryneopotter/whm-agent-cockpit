@@ -15,6 +15,9 @@ from cockpit.issues import IssueManager
 
 CRITICAL_SERVICES = ["litespeed", "exim", "dovecot", "mariadb", "named"]
 
+# Mount points to monitor for disk/inode critical alerts
+CRITICAL_MOUNTS = ["/", "/home", "/var", "/tmp"]
+
 DISK_CRITICAL_PERCENT = 90
 INODE_CRITICAL_PERCENT = 85
 MAIL_QUEUE_SURGE_THRESHOLD = 2000
@@ -61,35 +64,39 @@ class CriticalLoopCollector(BaseCollector):
                 self._issues.resolve(f"{svc}_stopped")
 
     def _check_disk(self, conn: sqlite3.Connection) -> None:
-        row = conn.execute(
-            "SELECT * FROM disk_health WHERE mount_point = '/' "
-            "ORDER BY collected_at DESC LIMIT 1"
-        ).fetchone()
-        if not row:
-            return
-        pct = row["used_percent"]
-        inode_pct = row["inode_used_percent"]
-        if pct and pct >= DISK_CRITICAL_PERCENT:
-            self._issues.detect_or_update(
-                issue_id="disk_critical",
-                severity="critical",
-                description=f"Disk at {pct}% (threshold: {DISK_CRITICAL_PERCENT}%)",
-                target_type="mount",
-                target_id="/",
-            )
-        elif pct and pct < DISK_CRITICAL_PERCENT - 5:
-            self._issues.resolve("disk_critical")
+        for mount in CRITICAL_MOUNTS:
+            row = conn.execute(
+                "SELECT * FROM disk_health WHERE mount_point = ? "
+                "ORDER BY collected_at DESC LIMIT 1",
+                (mount,),
+            ).fetchone()
+            if not row:
+                continue
+            pct = row["used_percent"]
+            inode_pct = row["inode_used_percent"]
+            mount_label = mount.replace("/", "_")
 
-        if inode_pct and inode_pct >= INODE_CRITICAL_PERCENT:
-            self._issues.detect_or_update(
-                issue_id="inode_critical",
-                severity="critical",
-                description=f"Inode usage at {inode_pct}% (threshold: {INODE_CRITICAL_PERCENT}%)",
-                target_type="mount",
-                target_id="/",
-            )
-        elif inode_pct and inode_pct < INODE_CRITICAL_PERCENT - 5:
-            self._issues.resolve("inode_critical")
+            if pct and pct >= DISK_CRITICAL_PERCENT:
+                self._issues.detect_or_update(
+                    issue_id=f"disk_critical{mount_label}",
+                    severity="critical",
+                    description=f"{mount} disk at {pct}% (threshold: {DISK_CRITICAL_PERCENT}%)",
+                    target_type="mount",
+                    target_id=mount,
+                )
+            elif pct and pct < DISK_CRITICAL_PERCENT - 5:
+                self._issues.resolve(f"disk_critical{mount_label}")
+
+            if inode_pct and inode_pct >= INODE_CRITICAL_PERCENT:
+                self._issues.detect_or_update(
+                    issue_id=f"inode_critical{mount_label}",
+                    severity="critical",
+                    description=f"{mount} inode at {inode_pct}% (threshold: {INODE_CRITICAL_PERCENT}%)",
+                    target_type="mount",
+                    target_id=mount,
+                )
+            elif inode_pct and inode_pct < INODE_CRITICAL_PERCENT - 5:
+                self._issues.resolve(f"inode_critical{mount_label}")
 
     def _check_mail_queue(self, conn: sqlite3.Connection) -> None:
         row = conn.execute(

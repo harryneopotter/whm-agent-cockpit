@@ -94,12 +94,16 @@ class PolicyEngine:
     def evaluate(self, action: Any, target: str | None = None) -> dict[str, Any]:
         """Evaluate whether an action is allowed to auto-run.
 
+        Queries the DB for consecutive detections (issues table), cooldown,
+        and rate limits (audit_log table).
+
         Returns dict with:
           - allowed: bool
           - reason: str
           - checks: dict of individual gate results
         """
         from cockpit.executor.catalog import ActionDef
+        import sqlite3, json
         assert isinstance(action, ActionDef), "action must be ActionDef"
 
         policy = self._policies.get(action.action_id)
@@ -123,16 +127,63 @@ class PolicyEngine:
             result["checks"]["enabled"] = True
             return result
 
-        # Auto-run path: check all gates
         checks: dict[str, bool] = {}
         checks["enabled"] = True
         checks["auto_run"] = True
-        # TODO: check consecutive detections from issue state
-        checks["consecutive_detections_met"] = True
-        # TODO: check cooldown from audit log
-        checks["cooldown_passed"] = True
-        # TODO: check max_per_24h from audit log
-        checks["rate_limit_ok"] = True
+
+        # Gate 3: consecutive detections — read from issues table
+        try:
+            conn = sqlite3.connect(settings.db_path)
+            conn.row_factory = sqlite3.Row
+            issue_id = f"{action.action_id.lower()}_{target}" if target else None
+            if issue_id:
+                row = conn.execute(
+                    "SELECT consecutive_detections FROM issues WHERE issue_id = ? "
+                    "AND state NOT IN ('RESOLVED', 'SUPPRESSED')",
+                    (issue_id,),
+                ).fetchone()
+                detections = row["consecutive_detections"] if row else 0
+                checks["consecutive_detections_met"] = (
+                    detections >= policy.require_consecutive_detections
+                )
+            else:
+                checks["consecutive_detections_met"] = True
+        except Exception:
+            checks["consecutive_detections_met"] = False
+
+        # Gate 4: cooldown — last execution time from audit_log
+        try:
+            row = conn.execute(
+                "SELECT created_at FROM audit_log WHERE event_type = 'action_executed' "
+                "AND json_extract(data, '$.action_id') = ? "
+                "ORDER BY created_at DESC LIMIT 1",
+                (action.action_id,),
+            ).fetchone()
+            if row:
+                from datetime import datetime, timezone
+                last = datetime.fromisoformat(row["created_at"])
+                now = datetime.now(timezone.utc)
+                elapsed = (now - last).total_seconds()
+                checks["cooldown_passed"] = elapsed >= policy.cooldown_seconds
+            else:
+                checks["cooldown_passed"] = True  # never run
+        except Exception:
+            checks["cooldown_passed"] = False
+
+        # Gate 5: rate limit — count in last 24h
+        try:
+            from datetime import datetime, timedelta, timezone
+            since = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
+            row = conn.execute(
+                "SELECT COUNT(*) AS cnt FROM audit_log WHERE event_type = 'action_executed' "
+                "AND json_extract(data, '$.action_id') = ? AND created_at >= ?",
+                (action.action_id, since),
+            ).fetchone()
+            count_24h = row["cnt"] if row else 0
+            checks["rate_limit_ok"] = count_24h < policy.max_per_24h
+            conn.close()
+        except Exception:
+            checks["rate_limit_ok"] = False
 
         all_pass = all(checks.values())
         result["allowed"] = all_pass

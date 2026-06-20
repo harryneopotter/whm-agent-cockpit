@@ -1,11 +1,14 @@
 """Executor — the only component allowed to perform actions.
 
-Accepts only known action_ids. Validates, enforces policy, executes, and logs.
+Accepts only known action_ids. Validates, enforces policy, executes,
+runs post-checks, and writes to the audit log.
 """
 
 from __future__ import annotations
 
+import json
 import logging
+import sqlite3
 import time
 from typing import Any
 
@@ -19,6 +22,42 @@ from cockpit.executor.handlers import (
 from cockpit.policy.engine import PolicyEngine
 
 logger = logging.getLogger(__name__)
+
+
+def _audit_log(
+    event_type: str,
+    source: str,
+    data: dict[str, Any],
+) -> None:
+    """Write an audit log entry."""
+    from cockpit.config import settings
+    try:
+        conn = sqlite3.connect(settings.db_path)
+        conn.execute(
+            "INSERT INTO audit_log (event_type, source, data) VALUES (?, ?, ?)",
+            (event_type, source, json.dumps(data, default=str)),
+        )
+        conn.commit()
+        conn.close()
+    except Exception as exc:
+        logger.error("Audit log write failed: %s", exc)
+
+
+def _post_check_service(service: str) -> dict[str, Any]:
+    """Check if a service is running after an action."""
+    try:
+        import subprocess
+        result = subprocess.run(
+            ["systemctl", "is-active", service],
+            capture_output=True, text=True, timeout=10,
+        )
+        return {
+            "service": service,
+            "status": result.stdout.strip(),
+            "running": result.returncode == 0,
+        }
+    except Exception as exc:
+        return {"service": service, "status": "unknown", "error": str(exc)}
 
 
 class Executor:
@@ -131,7 +170,24 @@ class Executor:
             result["status"] = "failed"
             result["reason"] = "No handler registered"
 
-        # TODO: post-check, audit log write
+        # 6. Post-check: verify service state after restart actions
+        if result["status"] == "completed" and action.action_id.startswith("RESTART_"):
+            svc = action.action_id.replace("RESTART_", "").lower()
+            post = _post_check_service(svc)
+            result["post_check"] = post
+            if not post.get("running"):
+                result["status"] = "post_check_failed"
+                _audit_log(
+                    "action_failed",
+                    "executor",
+                    {**result, "reason": "post-check failed"},
+                )
+
+        # 7. Audit log
+        if result["status"] in ("completed", "failed", "post_check_failed", "rejected"):
+            event = "action_executed" if result["status"] == "completed" else "action_failed"
+            _audit_log(event, "executor", result)
+
         return result
 
 

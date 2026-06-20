@@ -48,9 +48,32 @@ class WHMAccountsCollector(BaseCollector):
                     "ttl_seconds": 60,
                 })
 
+            # Also populate account_stats for client telemetry API
+            stats_rows: list[dict[str, Any]] = []
+            for acct in accounts:
+                stats_rows.append({
+                    "username": acct.username,
+                    "collected_at": now,
+                    "disk_used_mb": acct.disk_used_mb,
+                    "disk_limit_mb": acct.disk_limit_mb,
+                    "bandwidth_used_mb": acct.bandwidth_used_mb,
+                    "bandwidth_limit_mb": acct.bandwidth_limit_mb,
+                    "email_count": acct.email_count,
+                    "db_count": acct.db_count,
+                    "subdomain_count": acct.subdomain_count,
+                    "addon_domain_count": acct.addon_domain_count,
+                    "parked_domain_count": acct.parked_domain_count,
+                    "ftp_count": None,
+                    "plan_name": acct.plan_name,
+                    "primary_ip": None,
+                    "php_version": acct.php_version,
+                    "ttl_seconds": 600,
+                })
+
             return {
                 "whm_accounts": rows,
                 "suspension_status": suspension_rows,
+                "account_stats": stats_rows,
             }
         finally:
             client.close()

@@ -87,10 +87,6 @@ class ServerHealthCollector(BaseCollector):
     def _disk_usage(now: str) -> list[dict[str, Any]]:
         rows: list[dict[str, Any]] = []
         try:
-            import shutil
-            for part in shutil.disk_usage("/"):
-                pass
-            # shutil doesn't give inode info; fall back to df
             import subprocess
             result = subprocess.run(
                 ["df", "-B1", "--output=target,size,used,avail,ipcent,pcent"],

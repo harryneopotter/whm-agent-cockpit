@@ -217,7 +217,7 @@ def main() -> None:
     import sqlite3
     import os
 
-    db_path = os.environ.get("COCKPI_DB_PATH", "/var/lib/cockpit/cockpit.db")
+    db_path = os.environ.get("COCKPIT_DB_PATH", "/var/lib/cockpit/cockpit.db")
     os.makedirs(os.path.dirname(db_path), exist_ok=True)
 
     conn = sqlite3.connect(db_path)

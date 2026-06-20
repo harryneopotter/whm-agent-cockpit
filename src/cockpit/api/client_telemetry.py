@@ -6,6 +6,7 @@ Cache-first: returns stale/unknown immediately, queues background refresh.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import uuid
 from contextlib import asynccontextmanager
@@ -26,10 +27,33 @@ logger = logging.getLogger(__name__)
 _pending_refresh: set[str] = set()
 
 
+async def _refresh_worker() -> None:
+    """Background task: log pending refreshes every 30s for observability.
+
+    In MVP, actual data refresh happens on the next collector cycle
+    (every 3-10 min). This worker logs what's pending so operators
+    can verify the queue is being consumed.
+    """
+    while True:
+        await asyncio.sleep(30)
+        if _pending_refresh:
+            batch = list(_pending_refresh)
+            logger.info("Refresh queue: %d pending accounts (%s)", len(batch), ", ".join(batch[:5]))
+            _pending_refresh.clear()
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    if not settings.client_api_key:
+        logger.error(
+            "COCKPIT_CLIENT_API_KEY is not set — "
+            "refusing to start. Set it in /etc/cockpit/cockpit.env"
+        )
+        raise RuntimeError("COCKPIT_CLIENT_API_KEY is required for production")
     logger.info("Client telemetry API starting")
+    task = asyncio.create_task(_refresh_worker())
     yield
+    task.cancel()
     logger.info("Client telemetry API stopped")
 
 
@@ -40,9 +64,12 @@ app = FastAPI(title="Cockpit Client Telemetry API", version="0.1.0", lifespan=li
 
 
 def _verify_key(x_api_key: str | None = Header(None, alias="X-API-Key")) -> None:
-    if not settings.client_api_key:
-        return  # no key configured — allow all (dev mode)
-    if x_api_key != settings.client_api_key:
+    """Refuse requests if API key is missing or wrong.
+
+    Fail-closed: no key configured = refuse startup (see lifespan),
+    so by the time a request arrives the key is guaranteed present.
+    """
+    if not x_api_key or x_api_key != settings.client_api_key:
         raise HTTPException(status_code=403, detail="invalid API key")
 
 
