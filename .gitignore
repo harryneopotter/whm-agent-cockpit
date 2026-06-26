@@ -9,3 +9,6 @@ build/
 *.db-wal
 *.db-shm
 .env
+whmreview.md
+cockpitreview.md
+.ssh/

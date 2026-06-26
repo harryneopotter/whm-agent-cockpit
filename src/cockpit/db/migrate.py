@@ -175,7 +175,7 @@ MIGRATIONS = [
     # V12: Audit log
     """CREATE TABLE IF NOT EXISTS audit_log (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        created_at TEXT NOT NULL,
         event_type TEXT NOT NULL,
         source TEXT NOT NULL,
         data TEXT NOT NULL

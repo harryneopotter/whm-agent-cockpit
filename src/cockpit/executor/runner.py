@@ -2,6 +2,8 @@
 
 Accepts only known action_ids. Validates, enforces policy, executes,
 runs post-checks, and writes to the audit log.
+
+Every return path is audited — including rejections.
 """
 
 from __future__ import annotations
@@ -10,7 +12,7 @@ import json
 import logging
 import sqlite3
 import time
-from typing import Any
+from typing import Any, Literal
 
 from cockpit.executor.catalog import ActionDef, RiskTier, get, validate_action, register
 from cockpit.executor.handlers import (
@@ -29,13 +31,14 @@ def _audit_log(
     source: str,
     data: dict[str, Any],
 ) -> None:
-    """Write an audit log entry."""
+    """Write an audit log entry with UTC ISO timestamp."""
     from cockpit.config import settings
     try:
         conn = sqlite3.connect(settings.db_path)
         conn.execute(
-            "INSERT INTO audit_log (event_type, source, data) VALUES (?, ?, ?)",
-            (event_type, source, json.dumps(data, default=str)),
+            "INSERT INTO audit_log (created_at, event_type, source, data) VALUES (?, ?, ?, ?)",
+            (time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+             event_type, source, json.dumps(data, default=str)),
         )
         conn.commit()
         conn.close()
@@ -69,12 +72,14 @@ class Executor:
 
     @staticmethod
     def _register_default_actions() -> None:
-        """Register all built-in actions."""
+        """Register all built-in actions with explicit issue+service mappings."""
         register(ActionDef(
             action_id="RESTART_EXIM",
             description="Restart the Exim mail service",
             risk_tier=RiskTier.LOW_RISK_AUTO_FIX,
             target_type="service",
+            related_issue_ids=["exim_stopped"],
+            post_check_service="exim",
             allowed_args=[],
             cooldown_seconds=300,
             rate_limit_per_24h=5,
@@ -85,6 +90,8 @@ class Executor:
             description="Restart Dovecot",
             risk_tier=RiskTier.LOW_RISK_AUTO_FIX,
             target_type="service",
+            related_issue_ids=["dovecot_stopped"],
+            post_check_service="dovecot",
             allowed_args=[],
             cooldown_seconds=300,
             rate_limit_per_24h=5,
@@ -95,6 +102,8 @@ class Executor:
             description="Restart LiteSpeed web server",
             risk_tier=RiskTier.LOW_RISK_AUTO_FIX,
             target_type="service",
+            related_issue_ids=["litespeed_stopped"],
+            post_check_service="lsws",
             allowed_args=[],
             cooldown_seconds=300,
             rate_limit_per_24h=5,
@@ -115,16 +124,25 @@ class Executor:
         target: str | None = None,
         args: dict[str, Any] | None = None,
         dry_run: bool = False,
+        mode: Literal["manual", "auto"] = "manual",
     ) -> dict[str, Any]:
         """Execute (or dry-run) an action.
 
-        Returns a structured result dict with status, output, and audit fields.
+        Args:
+            action_id: registered action ID from the catalog
+            target: service/account/domain the action targets
+            args: optional keyword arguments for the handler
+            dry_run: if True, run policy checks but skip handler + post-check
+            mode: "manual" (dashboard button click) or "auto" (Codex/policy trigger)
+
+        Returns structured result dict. Every return path is audited.
         """
         result: dict[str, Any] = {
             "action_id": action_id,
             "target": target,
             "args": args or {},
             "dry_run": dry_run,
+            "mode": mode,
             "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         }
 
@@ -133,6 +151,7 @@ class Executor:
         if action is None:
             result["status"] = "rejected"
             result["reason"] = f"Unknown action_id: {action_id}"
+            _audit_log("action_rejected", "executor", result)
             return result
 
         # 2. Validate inputs
@@ -140,21 +159,23 @@ class Executor:
         if error:
             result["status"] = "rejected"
             result["reason"] = error
+            _audit_log("action_rejected", "executor", result)
             return result
 
-        # 3. Check policy
-        policy_result = self._policy.evaluate(action, target)
+        # 3. Check policy with mode
+        policy_result = self._policy.evaluate(action, target, mode=mode)
         if not policy_result["allowed"]:
             result["status"] = "rejected"
             result["reason"] = policy_result["reason"]
             result["policy"] = policy_result
+            _audit_log("action_rejected", "executor", result)
             return result
 
         # 4. Dry run
         if dry_run:
             result["status"] = "dry_run_ok"
             result["pre_checks"] = policy_result
-            return result
+            return result  # dry runs are NOT audited
 
         # 5. Execute
         if action.handler:
@@ -171,22 +192,17 @@ class Executor:
             result["reason"] = "No handler registered"
 
         # 6. Post-check: verify service state after restart actions
-        if result["status"] == "completed" and action.action_id.startswith("RESTART_"):
-            svc = action.action_id.replace("RESTART_", "").lower()
-            post = _post_check_service(svc)
+        if result["status"] == "completed" and action.post_check_service:
+            post = _post_check_service(action.post_check_service)
             result["post_check"] = post
             if not post.get("running"):
                 result["status"] = "post_check_failed"
-                _audit_log(
-                    "action_failed",
-                    "executor",
-                    {**result, "reason": "post-check failed"},
-                )
 
-        # 7. Audit log
-        if result["status"] in ("completed", "failed", "post_check_failed", "rejected"):
-            event = "action_executed" if result["status"] == "completed" else "action_failed"
-            _audit_log(event, "executor", result)
+        # 7. Single audit log entry (no double-logging)
+        if result["status"] == "completed":
+            _audit_log("action_executed", "executor", result)
+        elif result["status"] in ("failed", "post_check_failed"):
+            _audit_log("action_failed", "executor", result)
 
         return result
 

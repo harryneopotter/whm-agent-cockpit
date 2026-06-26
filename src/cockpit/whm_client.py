@@ -48,11 +48,9 @@ class WHMClient:
         self._token = token or settings.whm_token
         self._port = port or settings.whm_port
 
-        auth_header = httpx.BasicAuth("root", self._token)
         self._client = httpx.Client(
             base_url=f"https://{self._host}:{self._port}",
-            auth=auth_header,
-            verify=False,  # WHM self-signed cert
+            verify=settings.whm_verify_ssl,
             timeout=30,
             headers={"Authorization": f"whm root:{self._token}"},
         )

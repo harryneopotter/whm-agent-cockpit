@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     whm_host: str = "localhost"
     whm_token: str = ""
     whm_port: int = 2087
+    whm_verify_ssl: bool = False
 
     # Dashboard
     dashboard_host: str = "127.0.0.1"

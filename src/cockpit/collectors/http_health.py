@@ -1,7 +1,7 @@
 """HTTP health collector (Phase 2.5) — checks website reachability per account.
 
-Performs edge check (HEAD request) and extracts SSL cert info via socket.
-Origin-specific checks (curl --resolve) are done where applicable.
+Performs edge check (HEAD with GET fallback) and extracts SSL cert info via socket.
+Origin-specific checks (curl --resolve) are not yet implemented.
 """
 
 from __future__ import annotations
@@ -66,8 +66,6 @@ class HTTPHealthCollector(BaseCollector):
             "ssl_days_remaining": None,
             "online_status": "UNKNOWN",
             "edge_status": None,
-            "origin_status": None,
-            "origin_check_method": None,
             "ttl_seconds": 180,
         }
 

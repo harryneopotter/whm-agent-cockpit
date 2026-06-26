@@ -35,6 +35,10 @@ class ActionDef:
     enabled: bool = True
     # Handler is registered at startup; stored here for reference
     handler: Callable[..., Any] | None = None
+    # Issue IDs that this action can resolve (explicit mapping, no string magic)
+    related_issue_ids: list[str] = field(default_factory=list)
+    # Service name for post-checks (e.g. "lsws" for LiteSpeed)
+    post_check_service: str | None = None
 
 
 # ── In-memory catalog ───────────────────────────────────────────────────
