@@ -48,8 +48,8 @@
 
 #### Core package (`src/cockpit/`)
 - `__init__.py`
-- `config.py` — pydantic-settings, 18 env vars with COCKPIT_ prefix
-- `whm_client.py` — WHM API v1 client, token auth, `list_accounts()`
+- `config.py` — pydantic-settings, 18+ env vars with COCKPIT_ prefix
+- `whm_client.py` — WHM API v1 client, token-only auth, `list_accounts()`
 - `issues.py` — IssueManager with full state machine (10 states)
 - `reporting.py` — ReportGenerator for Codex input reports
 - `codex.py` — CodexReviewer, OpenAI API integration, structured JSON reports
@@ -58,13 +58,13 @@
 - `base.py` — BaseCollector ABC with SQLite UPSERT, freshness tracking
 - `server_health.py` — CPU/load/RAM/swap/disk/uptime from /proc
 - `service_status.py` — systemctl checks (litespeed, exim, dovecot, mariadb, named)
-- `whm_accounts.py` — WHM API listaccts, populates whm_accounts + suspension_status
-- `ssl_expiry.py` — Python ssl socket connect to :443 per domain
+- `whm_accounts.py` — WHM API listaccts, populates whm_accounts + suspension_status + account_stats
+- `ssl_expiry.py` — Python ssl socket connect to :443 per domain (primary + addon/parked/sub via domain_mapping)
 - `mail_queue.py` — exim -bpc, exim -bp, journalctl for errors
-- `jetbackup.py` — JetBackup CLI checks (destination, last run)
+- `jetbackup.py` — JetBackup CLI checks (destination, last run, failed accounts, missing backups)
 - `lve_stats.py` — lveinfo parser for resource offenders
-- `http_health.py` — SNI-safe HTTP checks with concurrency, jitter, rich classification
-- `critical_loop.py` — Immediate Critical Loop (5-min cycle)
+- `http_health.py` — HTTP checks (HEAD→GET fallback) with concurrency, jitter, socket-based SSL cert extraction
+- `critical_loop.py` — Immediate Critical Loop (5-min cycle, monitors / /home /var /tmp)
 - `runner.py` — APScheduler runner with migration auto-run at startup
 
 #### Dashboard (`src/cockpit/dashboard/`)
@@ -80,15 +80,15 @@
 - `templates/audit.html` — Audit log event viewer
 
 #### Client Telemetry API (`src/cockpit/api/`)
-- `client_telemetry.py` — Cache-first, client-safe schema, request_id/freshness/partial_data
+- `client_telemetry.py` — Cache-first, client-safe schema, joins account_stats + suspension + health + SSL
 
 #### Executor (`src/cockpit/executor/`)
-- `catalog.py` — ActionDef dataclass, in-memory registry, validation
-- `runner.py` — Executor with 5-gate flow (validate → policy → dry-run → execute → log)
-- `handlers/system.py` — restart_exim, restart_dovecot, restart_litespeed, check_service_status
+- `catalog.py` — ActionDef with related_issue_ids, post_check_service, mode=manual|auto
+- `runner.py` — Executor with mode support, single-audit-entry, post-check with explicit service mapping
+- `handlers/system.py` — restart_exim, restart_dovecot, restart_litespeed (lsws), check_service_status
 
 #### Policy (`src/cockpit/policy/`)
-- `engine.py` — TOML reader, 6-gate decision logic, circuit breaker, safe fallback
+- `engine.py` — TOML reader, mode=manual|auto, 7-gate logic (enabled→auto_run→detections→cooldown→rate_limit→circuit_breaker), safe fallback
 - `config/policy.example.toml` — Example policy with all fields
 
 #### Database
@@ -103,7 +103,7 @@
 
 #### Tests
 - `tests/test_whm_client.py` — WHMAccount creation, _int_or_none
-- `tests/test_policy.py` — PolicyEngine loading, auto-run, disabled action handling
+- `tests/test_policy.py` — PolicyEngine tests with temp DB, cooldown enforcement
 
 ### Deployment topology
 ```
@@ -119,9 +119,53 @@ WHM SERVER (production)              WHMCS SERVER
 └─────────────────────────────┘     └──────────────────┘
 ```
 
-### Pending (Post-MVP)
+---
+
+## Session 2: Review fixes (batch 1)
+
+After first code review (`whmreview.md`):
+
+### Issues fixed (6)
+1. **Policy engine 3 TODO gates** → evaluate() queries issues table for consecutive detections, audit_log for cooldown + rate limits
+2. **Executor missing post-check + audit** → Added `_post_check_service()`, `_audit_log()` writer, called after every execution
+3. **COCKPI_DB_PATH typo** → Fixed → COCKPIT_DB_PATH
+4. **Dead shutil loop** → Removed `for part in shutil.disk_usage("/"): pass`
+5. **account_stats not populated** → WHMAccountsCollector now writes account_stats table
+6. **Client API allowed unauthenticated** → Fail-closed: refuses startup if key unset; requests require valid key
+
+### Corrected inaccuracies from first review
+- HTTP concurrency, jitter, cache-first, client-safe schema were already implemented
+- `cpanel.service` was never in the code
+
+---
+
+## Session 3: Review fixes (batch 2)
+
+After second corrected review (`cockpitreview.md` → `cockpit-fixes.md`):
+
+### Issues fixed (10)
+1. **mode=manual vs mode=auto** → evaluate() takes mode param. Auto mode requires auto_run=true.
+2. **Consecutive detection string guessing** → Uses related_issue_ids (explicit mapping) + optional issue_id param
+3. **Cooldown timestamp naive vs aware** → Normalizes naive timestamps to UTC before subtraction
+4. **Circuit breaker not enforced** → _check_circuit_breaker() counts action_failed events in 24h
+5. **Rejected actions not audited** → Every return path in executor audits (_audit_log("action_rejected", ...))
+6. **Post-check double-logged** → Single _audit_log() call at end, not inside post-check block
+7. **LiteSpeed lsws vs litespeed** → post_check_service="lsws" field; post-check uses action field, not ID string
+8. **Client API reads only account_stats** → _fetch_client_data() joins suspension_status + account_health + ssl_certs
+9. **Fake refresh queue (in-memory, no work)** → Replaced with persistent refresh_requests SQLite table
+10. **Origin check not implemented but claimed** → Removed origin_status from HTTP health output; docstring updated
+
+### Additional fixes
+- **WHM client**: Removed conflicting httpx.BasicAuth. Uses only Authorization: whm root:TOKEN. SSL verify configurable.
+- **Audit log timestamps**: Executor writes explicit UTC ISO instead of SQLite naive datetime('now').
+
+---
+
+## Pending (Post-MVP)
 - Phase 7: Tier 1 Auto-Fix enablement
 - Phase 8: Telegram approval workflow (signed buttons, notifications)
 - Phase 9: Hardening (self-monitoring, emergency controls, escalation rules)
 - Telegram notification spec
 - Complete escalation rule matrix
+- `curl --resolve` origin-specific HTTP health checks
+- Sudoers/helper design for deterministic action scripts (systemctl from unprivileged cockpit user)
